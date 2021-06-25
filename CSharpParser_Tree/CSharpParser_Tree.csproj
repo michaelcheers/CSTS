@@ -12,14 +12,15 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Remove="Ideas\**" />
+    <EmbeddedResource Remove="Ideas\**" />
+    <None Remove="Ideas\**" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Compile Remove="Ideas.cs" />
     <Compile Remove="Ideas2.cs" />
     <Compile Remove="Ideas3.cs" />
-    <Compile Remove="Ideas\Ideas0.cs" />
-    <Compile Remove="Ideas\Ideas1.cs" />
-    <Compile Remove="Ideas\Ideas2.cs" />
-    <Compile Remove="Ideas\Ideas3.cs" />
-    <Compile Remove="Ideas\SuperCollections.cs" />
     <Compile Remove="SuperCollections.cs" />
     <Compile Remove="Test.cs" />
   </ItemGroup>
@@ -33,10 +34,6 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="3.10.0" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <Folder Include="Ideas\" />
   </ItemGroup>
 
 </Project>

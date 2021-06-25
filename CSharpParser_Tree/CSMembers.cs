@@ -1,4 +1,7 @@
-﻿#nullable enable
+﻿#pragma warning disable CS8846 // The switch expression does not handle all possible values of its input type (it is not exhaustive).
+#pragma warning disable CS8509 // The switch expression does not handle all possible values of its input type (it is not exhaustive).
+#pragma warning disable RS1024 // Compare symbols correctly
+#nullable enable
 using Basics;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
@@ -105,21 +108,27 @@ namespace CSharpParser_Tree.CSMembers
         public abstract string Name { get; }
         public abstract Class? Upper { get; }
 
-        protected abstract MemberInstance _CreateInstance(ClassInstantiation? upper);
         public abstract MemberInstance CreateInstance (ClassInstantiation? upper);
     }
-    public static class _MemC<T, SymT>
-        where T: MemberInstance
+    public abstract class Member<InstanceT> : Member where InstanceT : MemberInstance
+    {
+        protected abstract InstanceT _CreateInstance(ClassInstantiation? upper);
+
+        public sealed override InstanceT CreateInstance(ClassInstantiation? upper)
+            => upper == null ? _CreateInstance(null) : upper.memberInstances.TryGetOrAdd(this, () => _CreateInstance(upper));
+    }
+    public static class _MemC<InstanceT, SymT>
+        where InstanceT: MemberInstance
         where SymT: ISymbol
     {
-        public abstract class __ : Member<T>
+        public abstract class __ : Member<InstanceT>
         {
             public sealed override ISymbol Symbol => SymbolImpl;
             public abstract SymT SymbolImpl { get; }
         }
         public abstract class _ : __
         {
-            public sealed override SymT SymbolImpl => throw new NotImplementedException();
+            public sealed override SymT SymbolImpl => Symbol;
             public new abstract SymT Symbol { get; }
         }
     }
@@ -132,13 +141,6 @@ namespace CSharpParser_Tree.CSMembers
 
         public InstT InstantiateAsNS()
             => CreateInstance(Upper?.InstantiateAsNS()).Instantiate(ImmutableArray<ClassInstantiation>.Empty, Symbol);
-    }
-    public abstract class Member<InstanceT> : Member where InstanceT: MemberInstance
-    {
-        protected abstract override InstanceT _CreateInstance(ClassInstantiation? upper);
-
-        public sealed override InstanceT CreateInstance(ClassInstantiation? upper)
-            => upper == null ? _CreateInstance(null) : upper.memberInstances.TryGetOrAdd(this, () => _CreateInstance(upper));
     }
     public class Class : GenericMember<ClassInstance, ClassInstantiation, INamespaceOrTypeSymbol>
     {
