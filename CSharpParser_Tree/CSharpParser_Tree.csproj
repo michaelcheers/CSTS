@@ -1,0 +1,42 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net5.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <StartupObject></StartupObject>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
+    <WarningsAsErrors>;NU1605;8600;8601;8602;8603;8604;8605;8606;8607;8608;8609;8610;8611;8612;8614;8616;8618;8619;8620;8714;8767</WarningsAsErrors>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Remove="Ideas.cs" />
+    <Compile Remove="Ideas2.cs" />
+    <Compile Remove="Ideas3.cs" />
+    <Compile Remove="Ideas\Ideas0.cs" />
+    <Compile Remove="Ideas\Ideas1.cs" />
+    <Compile Remove="Ideas\Ideas2.cs" />
+    <Compile Remove="Ideas\Ideas3.cs" />
+    <Compile Remove="Ideas\SuperCollections.cs" />
+    <Compile Remove="SuperCollections.cs" />
+    <Compile Remove="Test.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\.editorconfig" Link=".editorconfig" />
+    <None Include="Test.cs">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="3.10.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="Ideas\" />
+  </ItemGroup>
+
+</Project>

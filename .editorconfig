@@ -1,0 +1,31 @@
+﻿[*.cs]
+
+# CS8602: Dereference of a possibly null reference.
+dotnet_diagnostic.CS8602.severity = error
+
+# CS8767: Nullability of reference types in type of parameter doesn't match implicitly implemented member (possibly because of nullability attributes).
+dotnet_diagnostic.CS8767.severity = error
+
+# CS8714: The type cannot be used as type parameter in the generic type or method. Nullability of type argument doesn't match 'notnull' constraint.
+dotnet_diagnostic.CS8714.severity = error
+
+# CS8604: Possible null reference argument.
+dotnet_diagnostic.CS8604.severity = error
+
+# CS8897: Static types cannot be used as parameters
+dotnet_diagnostic.CS8897.severity = error
+
+# IDE1006: Naming Styles
+dotnet_diagnostic.IDE1006.severity = silent
+
+# RS1024: Compare symbols correctly
+dotnet_diagnostic.RS1024.severity = silent
+
+# CS8509: The switch expression does not handle all possible values of its input type (it is not exhaustive).
+dotnet_diagnostic.CS8509.severity = silent
+
+# CS8846: The switch expression does not handle all possible values of its input type (it is not exhaustive).
+dotnet_diagnostic.CS8846.severity = silent
+
+# CS8655: The switch expression does not handle some null inputs.
+dotnet_diagnostic.CS8655.severity = silent
