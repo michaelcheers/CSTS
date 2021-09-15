@@ -8,9 +8,10 @@ using System.Linq;
 
 namespace CSharpParser_Tree
 {
+    using static Basics.ExceptionThrower;
     using static Program;
-    using static CSMembers.MemberList;
-    using CSMembers;
+    using static CS.MemberList;
+    using CS;
     using Basics;
 
     public static partial class Program
@@ -47,7 +48,7 @@ namespace CSharpParser_Tree
             var genericArgs = sym.TypeArguments.ImmutSelect(AddGenericArgs);
             var symWithGenerics = sym.ConstructedFrom.Construct(genericArgs.ImmutSelect(a => (ITypeSymbol)a.Symbol), sym.TypeArgumentNullableAnnotations);
             return allSymbols.TryGetOrAdd(symWithGenerics, () =>
-                ((Class)memberLookup[sym.ConstructedFrom]).CreateInstance(upper).Instantiate(genericArgs, sym)
+                ((Class)memberLookup[sym.OriginalDefinition]).CreateInstance(upper).Instantiate(genericArgs, symWithGenerics)
             );
         }
 
@@ -69,33 +70,46 @@ namespace CSharpParser_Tree
 
         public ClassInstantiation AddGenericArgs(INamespaceOrTypeSymbol sym) => sym switch
         {
+            INamespaceSymbol{IsGlobalNamespace:true } => top,
             INamespaceSymbol ns => ((Class)memberLookup[ns]).InstantiateAsNS(),
             ITypeParameterSymbol tps => genericValues[tps.Name],
             IArrayTypeSymbol arr => AddGenericArgs(arr),
             INamedTypeSymbol named => AddGenericArgs(named)
         };
 
+        public static IMethodSymbol GetAccessedProp(SyntaxNode node, IPropertySymbol ps) => node.Parent switch
+        {
+            AssignmentExpressionSyntax aes when aes.Left == node => aes.Kind() == SyntaxKind.SimpleAssignmentExpression ? ps.SetMethod! : throw E,
+            _ => ps.GetMethod!
+        };
+
         public override void DefaultVisit(SyntaxNode node)
         {
-            if (node is TypeSyntax ts)
+            if (node is TypeSyntax or ElementAccessExpressionSyntax or MemberAccessExpressionSyntax or BaseObjectCreationExpressionSyntax)
             {
-                switch (model.GetSymbolInfo(ts).Symbol)
+                switch (model.GetSymbolInfo(node).Symbol)
                 {
                     case ITypeSymbol tsym:
                         AddGenericArgs(tsym);
                         break;
+                    case IFieldSymbol fsym:
+                        ((Method)memberLookup[fsym.OriginalDefinition]).CreateInstance(AddGenericArgs(fsym.ContainingType)).InstantiateNonGeneric();
+                        break;
                     case IMethodSymbol tsm:
-                        Method m = (Method)memberLookup[tsm.ConstructedFrom];
-                        var typeArgs = tsm.TypeArguments.Select(AddGenericArgs);
-                        var typeArgNames = tsm.TypeParameters.Select(v => v.Name);
-                        var upper = AddGenericArgs(tsm.ContainingType);
-                        var oldLength = genericValues.Count;
-                        var newGenericVals = upper.AllGenericArgs.Concat(typeArgs.Zip(typeArgNames, (type, name) =>
-                            new KeyValuePair<string, ClassInstantiation>(name, type)
-                        )).ToImmutableDictionary();
+                        ClassInstantiation upper = AddGenericArgs(tsm.ContainingType);
+                        Method m = (Method)memberLookup[tsm.OriginalDefinition];
+                        IEnumerable<ClassInstantiation> typeArgs = tsm.TypeArguments.Select(AddGenericArgs);
+                        ImmutableDictionary<string, ClassInstantiation> newGenericVals =
+                            upper.AllGenericArgs.Concat(typeArgs.Zip(tsm.TypeParameters.Select(v => v.Name), (type, name) =>
+                                new KeyValuePair<string, ClassInstantiation>(name, type)
+                            )).ToImmutableDictionary();
                         new SecondPass(newGenericVals).Visit(m.Declaration);
                         m.CreateInstance(upper).Instantiate(typeArgs.ToImmutableArray(), tsm);
-                        return;
+                        break;
+                    case IPropertySymbol ps:
+                        IMethodSymbol mSym = GetAccessedProp(node, ps);
+                        ((Method)memberLookup[mSym.OriginalDefinition]).CreateInstance(AddGenericArgs(mSym.ContainingType)).InstantiateNonGeneric();
+                        break;
                 }
             }
             base.DefaultVisit(node);

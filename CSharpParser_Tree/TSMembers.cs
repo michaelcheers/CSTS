@@ -17,14 +17,14 @@ namespace CSharpParser_Tree.TSMembers
     }
     public class TSClass : TSMember
     {
-        public List<TSMember> members = new();
+        public readonly List<TSMember> members = new();
         public string Name;
     }
+    public record TSParameter(string name, TSClass type);
     public class TSMethod : TSMember
     {
-        public List<TSMember> members = new();
         public string Name;
-        public ImmutableArray<TSClass> Parameters;
+        public ImmutableArray<TSParameter> Parameters;
     }
     public class ClassAccessExpression : TSExpr
     {

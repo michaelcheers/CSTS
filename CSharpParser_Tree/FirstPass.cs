@@ -9,14 +9,18 @@ using System.Threading.Tasks;
 
 namespace CSharpParser_Tree
 {
-    using CSMembers;
+    using CS;
+    using static CS.MemberList;
 
     public static partial class Program
     {
         public static partial void FirstPass()
         {
             foreach (var mem in root.Members)
-                FirstPass(mem, top);
+                FirstPass(mem, top.From.Member);
+            foreach (SpecialType st in Enum.GetValues<SpecialType>())
+                if (compilation.GetTypeByMetadataName(st.ToString().Replace('_', '.')) is { } ts)
+                    primitiveTypes.Add(((Class)memberLookup[ts]).InstantiateAsNS(), st);
         }
         public static void FirstPass(MemberDeclarationSyntax mem, Class upper)
         {
@@ -32,7 +36,7 @@ namespace CSharpParser_Tree
                 case NamespaceDeclarationSyntax:
                 case TypeDeclarationSyntax:
                     var sym = (INamespaceOrTypeSymbol)model.GetDeclaredSymbol(mem)!;
-                    if (upper.Symbol != sym.ContainingSymbol) throw new NotImplementedException();
+                    if (!upper.Symbol.Equals(sym.ContainingSymbol)) throw new NotImplementedException();
                     var c = new Class(sym, mem, sym.Name, upper);
                     foreach (var m in mem switch
                     {
@@ -40,20 +44,29 @@ namespace CSharpParser_Tree
                         TypeDeclarationSyntax tds => tds.Members
                     })
                         FirstPass(m, c);
+                    if (sym is INamedTypeSymbol nts
+                        && nts.InstanceConstructors.FirstOrDefault(v => v.DeclaringSyntaxReferences.Length == 0) is { } defaultConst)
+                        c.members.Add(new Method(defaultConst, null, "@new", c));
                     upper.members.Add(c);
                     break;
                 case BaseMethodDeclarationSyntax bmds:
                     var symbol = model.GetDeclaredSymbol(bmds)!;
                     upper.members.Add(new Method(symbol, mem, symbol.Name, upper));
                     break;
-                case PropertyDeclarationSyntax pds:
-                    IPropertySymbol ps = model.GetDeclaredSymbol(pds)!;
+                case BasePropertyDeclarationSyntax pds when pds is IndexerDeclarationSyntax or PropertyDeclarationSyntax:
+                    IPropertySymbol ps = pds switch
+                    {
+                        IndexerDeclarationSyntax pds_Indexer => model.GetDeclaredSymbol(pds_Indexer)!,
+                        PropertyDeclarationSyntax pds_Prop => model.GetDeclaredSymbol(pds_Prop)!
+                    };
                     if (ps.GetMethod is { } gm)
                     {
                         CSharpSyntaxNode decl = pds.AccessorList is { } accessorList ?
                             accessorList.Accessors.Single(v => v.IsKind(SyntaxKind.GetAccessorDeclaration))
                             : pds;
                         upper.members.Add(new Method(gm, decl, "get " + ps.Name, upper));
+                        if (decl is AccessorDeclarationSyntax { Body: null, ExpressionBody: null })
+                            break;
                     }
                     if (ps.SetMethod is { } sm)
                     {
@@ -67,6 +80,8 @@ namespace CSharpParser_Tree
                         IFieldSymbol fs = (IFieldSymbol)model.GetDeclaredSymbol(variable)!;
                         upper.members.Add(new Method(fs, variable, fs.Name, upper));
                     }
+                    break;
+                case GlobalStatementSyntax:
                     break;
                 default:
                     throw new NotImplementedException();

@@ -29,3 +29,6 @@ dotnet_diagnostic.CS8846.severity = silent
 
 # CS8655: The switch expression does not handle some null inputs.
 dotnet_diagnostic.CS8655.severity = silent
+
+[*.{cs,vb}]
+dotnet_diagnostic.RS1024.severity=silent

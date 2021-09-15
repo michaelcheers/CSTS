@@ -1,4 +1,5 @@
 ﻿#nullable enable
+using Microsoft.CodeAnalysis;
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
@@ -16,12 +17,35 @@ namespace Basics
             => string.Join(separator, e);
 
         [DebuggerStepThrough]
+        public static int Count (this string s, string substr, StringComparison strComp = StringComparison.CurrentCulture)
+        {
+            int count = 0, index = s.IndexOf(substr, strComp);
+            while (index != -1)
+            {
+                count++;
+                index = s.IndexOf(substr, index + substr.Length, strComp);
+            }
+            return count;
+        }
+
+        public static IEnumerable<int> IDXs (this string str, string substr, StringComparison strComp = StringComparison.CurrentCulture)
+        {
+            int index = str.IndexOf(substr, strComp);
+            while (index != -1)
+            {
+                yield return index;
+                index = str.IndexOf(substr, index + substr.Length, strComp);
+            }
+        }
+
+        [DebuggerStepThrough]
         public static IEnumerator<int> GetEnumerator(this Range r)
         {
             int ToInt(Index i) => i.IsFromEnd ? -i.Value : i.Value;
             for (int n = ToInt(r.Start); n < ToInt(r.End); n++) yield return n;
         }
 
+        [DebuggerStepThrough]
         public static TValue TryGetOrAdd<TKey, TValue>(this IDictionary<TKey, TValue> d, TKey key, Func<TValue> toAdd)
         {
             if (d.TryGetValue(key, out var value))
@@ -34,6 +58,7 @@ namespace Basics
             }
         }
 
+        [DebuggerStepThrough]
         public static TValue TryGetOrAdd<TKey, TValue>(this KeyedCollection<TKey, TValue> d, TKey key, Func<TValue> toAdd)
             where TKey : notnull
         {
@@ -47,7 +72,10 @@ namespace Basics
             }
         }
 
+        [DebuggerStepThrough]
         public static ImmutableArray<T2> ImmutSelect<T, T2>(this IEnumerable<T> e, Func<T, T2> f) => e.Select(f).ToImmutableArray();
+        [DebuggerStepThrough]
+        public static ImmutableArray<T2> ImmutSelect<T, T2>(this ImmutableArray<T> e, Func<T, T2> f) => ImmutableArray.CreateRange(e, f);
     }
     class ListComparer<T> : IEqualityComparer<ImmutableArray<T>> where T : notnull
     {

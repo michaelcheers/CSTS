@@ -16,26 +16,32 @@ namespace CSharpParser_Tree
 {
     using static Program;
     using Basics;
-    using CSMembers;
+    using CS;
 
     public static partial class Program
     {
         public static SyntaxTree tree;
         public static CompilationUnitSyntax root;
+        public static CSharpCompilation compilation;
         public static SemanticModel model;
 
         public static Dictionary<ITypeSymbol, ClassInstantiation> allSymbols = new(SymbolEqualityComparer.Default);
-        public static Class top;
+        public static Dictionary<ClassInstantiation, SpecialType> primitiveTypes = new();
+        public static INamedTypeSymbol TemplateAttribute, InvocationTemplateAttribute, ExternalAttribute;
+        public static ClassInstantiation top;
         public static ClassInstance ArrayType;
 
         static Program()
         {
             tree = CSharpSyntaxTree.ParseText(File.ReadAllText("Test.cs"));
             root = tree.GetCompilationUnitRoot();
-            model = CSharpCompilation.Create("HelloWorld").AddSyntaxTrees(tree).GetSemanticModel(tree);
-            top = new Class(model.Compilation.GlobalNamespace, null!, "", null!);
-            ArrayType = new Class(null!, null!/*Will be fixed!*/, "Array", top).CreateInstance(top.InstantiateAsNS());
-            MemberList.memberLookup.Add(top);
+            compilation = CSharpCompilation.Create("HelloWorld").AddSyntaxTrees(tree);
+            model = compilation.GetSemanticModel(tree);
+            ExternalAttribute = compilation.GetTypeByMetadataName($"CStoTS.Attributes.{nameof(ExternalAttribute)}")!;
+            TemplateAttribute = compilation.GetTypeByMetadataName($"CStoTS.Attributes.{nameof(TemplateAttribute)}")!;
+            InvocationTemplateAttribute = compilation.GetTypeByMetadataName($"CStoTS.Attributes.{nameof(InvocationTemplateAttribute)}")!;
+            top = Class.CreateRoot(new Class(model.Compilation.GlobalNamespace, null!, "", null!));
+            ArrayType = new Class(null!, null!/*Will be fixed!*/, "Array", top.From.Member).CreateInstance(top);
         }
         #region Old Code
         public static string PrintExpr(StatementSyntax expr)
@@ -175,21 +181,41 @@ namespace CSharpParser_Tree
         #endregion
         public static partial void FirstPass();
         public static partial void SecondPass();
-        public static void ThirdPass ()
+        public static partial void OutputJS();
+        public static void PrintNew (MemberInstantiation member)
         {
-
+            switch (member)
+            {
+                case ClassInstantiation ci:
+                    WriteLine($"class {ci} {{");
+                    indent++;
+                    foreach (var mem in ci.Children)
+                        PrintNew(mem);
+                    indent--;
+                    WriteLine("}");
+                    break;
+                case MethodInstantiation mi:
+                    WriteLine(mi);
+                    break;
+            }
         }
         public static void Main()
         {
             FirstPass();
             SecondPass();
-            foreach (var c in top.members)
-            {
-            }
+            OutputJS();
+            //foreach (var c in top)
+            //{
+            //}
+
+            //foreach (var mem in top.Children)
+            //{
+            //    PrintNew(mem);
+            //}
 
             // Old:
-            foreach (var mem in root.Members)
-                PrintMember(mem);
+            /*foreach (var mem in root.Members)
+                PrintMember(mem);*/
         }
     }
 }
