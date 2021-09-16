@@ -55,10 +55,10 @@ class List<T>
 
     public extern int Count { [Template("{this}.length")] get; }
 
-    [Template("(() => {this}[{this}.length - 1])")]
+    [InvocationTemplate("{this}[{this}.length - 1]")]
     public extern T Last();
 
-    public extern T this[int index] { [Template("(index => {this}[index])")] get; }
+    public extern T this[int index] { [InvocationTemplate("{this}[{index}]")] get; }
 }
 
 public class Program
@@ -67,7 +67,9 @@ public class Program
     {
         List<string> theBest = new() { "Hey", "You" };
         theBest.Add("Buffoon");
+        Console.WriteLine(theBest[0]);
         Console.WriteLine(theBest.Count);
         Console.WriteLine(theBest.Last());
+        int cool;
     }
 }

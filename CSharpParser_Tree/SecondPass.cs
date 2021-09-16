@@ -92,23 +92,23 @@ namespace CSharpParser_Tree
                     case ITypeSymbol tsym:
                         AddGenericArgs(tsym);
                         break;
-                    case IFieldSymbol fsym:
-                        ((Method)memberLookup[fsym.OriginalDefinition]).CreateInstance(AddGenericArgs(fsym.ContainingType)).InstantiateNonGeneric();
-                        break;
-                    case IMethodSymbol tsm:
-                        ClassInstantiation upper = AddGenericArgs(tsm.ContainingType);
-                        Method m = (Method)memberLookup[tsm.OriginalDefinition];
-                        IEnumerable<ClassInstantiation> typeArgs = tsm.TypeArguments.Select(AddGenericArgs);
-                        ImmutableDictionary<string, ClassInstantiation> newGenericVals =
-                            upper.AllGenericArgs.Concat(typeArgs.Zip(tsm.TypeParameters.Select(v => v.Name), (type, name) =>
-                                new KeyValuePair<string, ClassInstantiation>(name, type)
-                            )).ToImmutableDictionary();
-                        new SecondPass(newGenericVals).Visit(m.Declaration);
-                        m.CreateInstance(upper).Instantiate(typeArgs.ToImmutableArray(), tsm);
-                        break;
-                    case IPropertySymbol ps:
-                        IMethodSymbol mSym = GetAccessedProp(node, ps);
-                        ((Method)memberLookup[mSym.OriginalDefinition]).CreateInstance(AddGenericArgs(mSym.ContainingType)).InstantiateNonGeneric();
+                    case ISymbol sym when sym is IFieldSymbol or IMethodSymbol or IPropertySymbol:
+                        if (sym is IPropertySymbol ps) sym = ps.GetMethod!;
+                        ClassInstantiation upper = AddGenericArgs(sym.ContainingType);
+                        Method m = (Method)memberLookup[sym.OriginalDefinition];
+                        var genericArgs = upper.AllGenericArgs;
+                        var typeArgs = ImmutableArray<ClassInstantiation>.Empty;
+                        if (sym is IMethodSymbol ms)
+                        {
+                            typeArgs = ms.TypeArguments.ImmutSelect(AddGenericArgs);
+                            genericArgs = genericArgs.Concat(typeArgs.Zip
+                            (
+                                ms.TypeParameters.Select(v => v.Name),
+                                (type, name) => new KeyValuePair<string, ClassInstantiation>(name, type)
+                            ));
+                        }
+                        new SecondPass(genericArgs.ToImmutableDictionary()).Visit(m.Declaration);
+                        m.CreateInstance(upper).Instantiate(typeArgs.ToImmutableArray(), sym);
                         break;
                 }
             }
