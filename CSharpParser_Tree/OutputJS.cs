@@ -10,6 +10,7 @@ namespace CSharpParser_Tree
     using CSharpParser_Tree.CS;
     using Microsoft.CodeAnalysis;
     using Microsoft.CodeAnalysis.CSharp.Syntax;
+    using static CS.MemberList;
     using static Program;
     using static Basics.ExceptionThrower;
     using System.Text.RegularExpressions;
@@ -158,6 +159,20 @@ namespace CSharpParser_Tree
                         Write(s, containing);
                     EndCodeBlock();
                     break;
+                case IfStatementSyntax ifss:
+                    Write("if (");
+                    Write(ifss.Condition, containing);
+                    Write(")");
+                    StartCodeBlock();
+                    if (ifss.Statement is BlockSyntax block)
+                    {
+                        foreach (var subStatement in block.Statements)
+                            Write(subStatement, containing);
+                    }
+                    else
+                        Write(ifss.Statement, containing);
+                    EndCodeBlock();
+                    break;
                 case LocalDeclarationStatementSyntax ldss:
                     ITypeSymbol ts = (ITypeSymbol)model.GetSymbolInfo(ldss.Declaration.Type).Symbol!;
                     WriteJoin(ldss.Declaration.Variables, varia =>
@@ -166,11 +181,11 @@ namespace CSharpParser_Tree
                         Write(varia.Identifier.ValueText);
                         Write(": ");
                         Write(ts);
-                        Write(" = ");
                         if (varia.Initializer is { } init)
+                        {
+                            Write(" = ");
                             Write(init.Value, containing);
-                        else
-                            WriteDefaultValueOf(allSymbols[ts]);
+                        }
                         Write(";");
                     }, "\n");
                     break;
@@ -243,9 +258,11 @@ namespace CSharpParser_Tree
         }
 
         public static MemberInstantiation FindSymbol (ISymbol sym) =>
-            allSymbols[sym.ContainingType!].Children.Single(mi => mi.Symbol.Equals(sym switch
-                { IPropertySymbol ps => ps.GetMethod, _ => sym }
-            ));
+            sym.OriginalDefinition != sym ?
+                allSymbols[sym.ContainingType!].Children.Single(mi => mi.Symbol.Equals(sym switch
+                    { IPropertySymbol ps => ps.GetMethod, _ => sym }
+                )) :
+                ((MethodInstance)memberLookup[sym].CreateInstance(allSymbols[sym.ContainingType!])).InstantiateNonGeneric();
 
         public static MethodInstantiation FindSymbol(IFieldSymbol sym)
             => (MethodInstantiation)FindSymbol((ISymbol)sym);
@@ -309,27 +326,28 @@ namespace CSharpParser_Tree
                         WriteReplacing(mi.Template, "{this}", () => Write(maes.Expression, containing));
                     }
                     break;
-                case InvocationExpressionSyntax or ElementAccessExpressionSyntax:
-                    var ies = new
-                    {
-                        Left = expr switch
-                        {
-                            InvocationExpressionSyntax { Expression: MemberAccessExpressionSyntax maes } => maes.Expression,
-                            ElementAccessExpressionSyntax eaes => eaes.Expression
-                        },
-                        ArgumentList = (BaseArgumentListSyntax)
-                        (
-                            expr switch
-                            {
-                                InvocationExpressionSyntax inv => inv.ArgumentList,
-                                ElementAccessExpressionSyntax eaes => eaes.ArgumentList
-                            }
-                        )
-                    };
+                case InvocationExpressionSyntax:
+                case ElementAccessExpressionSyntax:
+                case BinaryExpressionSyntax:
                     IMethodSymbol ms = expr switch
                     {
                         InvocationExpressionSyntax inv => (IMethodSymbol)model.GetSymbolInfo(inv.Expression).Symbol!,
                         ElementAccessExpressionSyntax => ((IPropertySymbol)model.GetSymbolInfo(expr).Symbol!).GetMethod!,
+                        BinaryExpressionSyntax bes => (IMethodSymbol)model.GetSymbolInfo(bes).Symbol!,
+                    };
+                    var foundMem = FindSymbol(ms);
+                    ms = (IMethodSymbol)foundMem.Symbol;
+                    ExpressionSyntax? left = expr switch
+                    {
+                        _ when ms.IsStatic => null,
+                        InvocationExpressionSyntax { Expression: MemberAccessExpressionSyntax maes } => maes.Expression,
+                        ElementAccessExpressionSyntax eaes => eaes.Expression
+                    };
+                    ExpressionSyntax[] arguments = expr switch
+                    {
+                        InvocationExpressionSyntax inv => inv.ArgumentList.Arguments.Select(a => a.Expression).ToArray(),
+                        ElementAccessExpressionSyntax eaes => eaes.ArgumentList.Arguments.Select(a => a.Expression).ToArray(),
+                        BinaryExpressionSyntax bes => new[] { bes.Left, bes.Right }
                     };
                     //if (model.GetSymbolInfo(left).Symbol! is not IMethodSymbol ms)
                     //{
@@ -339,7 +357,7 @@ namespace CSharpParser_Tree
                     //    Write(")");
                     //    break;
                     //}
-                    string template = FindSymbol(ms).InvocationTemplate;
+                    string template = foundMem.InvocationTemplate;
                     (string key, int count)[] formatStrings = Regex.Matches(template, "{[0-9a-zA-Z]+}").GroupBy(m => m.Value).Select(g => (g.Key, g.Count())).ToArray();
                     List<string> formatParams = new();
                     foreach ((string key, _) in formatStrings.Where(f => f.count > 1))
@@ -356,15 +374,15 @@ namespace CSharpParser_Tree
                     }
                     List<(string, Action)> replacements = new();
                     if (!ms.IsStatic)
-                        if (ies.Left is { } left)
+                        if (left != null)
                             replacements.Add(("{this}", () => Write(left, containing)));
                         else throw E;
                     foreach (var (parameter, i) in ms.Parameters.Select((v, i) => (v, i)))
                     {
-                        replacements.Add(("{" + parameter.Name + "}", () => WriteJoin(ies.ArgumentList.Arguments, arg => Write(arg.Expression, containing))));
-                        replacements.Add(("{" + i + "}", () => WriteJoin(ies.ArgumentList.Arguments, arg => Write(arg.Expression, containing))));
+                        replacements.Add(("{" + parameter.Name + "}", () => Write(arguments[i], containing)));
+                        replacements.Add(("{" + i + "}", () => Write(arguments[i], containing)));
                     }
-                    replacements.Add(("{...}", () => WriteJoin(ies.ArgumentList.Arguments, arg => Write(arg.Expression, containing))));
+                    replacements.Add(("{...}", () => WriteJoin(arguments, arg => Write(arg, containing))));
                     WriteReplacing(template, replacements);
                     break;
                 case BaseObjectCreationExpressionSyntax boces:

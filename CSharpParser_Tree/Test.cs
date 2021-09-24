@@ -28,7 +28,13 @@ namespace CStoTS
 namespace System
 {
     [Template("void"), External]   public struct Void { }
-    [Template("number"), External] public struct Int32 { }
+    [Template("number"), External]
+    public struct Int32
+    {
+        [InvocationTemplate("{a} > {b}"), External]
+        public static bool operator > (int a, int b) => a > b;
+    }
+    [Template("boolean"), External] public struct Boolean { }
     [Template("string"), External] public struct String {  }
     public class Attribute { }
 }
@@ -67,9 +73,10 @@ public class Program
     {
         List<string> theBest = new() { "Hey", "You" };
         theBest.Add("Buffoon");
-        Console.WriteLine(theBest[0]);
-        Console.WriteLine(theBest.Count);
-        Console.WriteLine(theBest.Last());
+        if (theBest.Count > 0)
+        {
+            Console.WriteLine(theBest.Last());
+        }
         int cool;
     }
 }

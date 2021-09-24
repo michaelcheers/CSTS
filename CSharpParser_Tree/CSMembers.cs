@@ -62,7 +62,7 @@ namespace CSharpParser_Tree.CS
 
         public virtual bool IsExternal => From.Member.Symbol.GetAttributes().Any(v => v.AttributeClass == ExternalAttribute);
 
-        public AttributeData? TemplateAttribute => From.Member.Symbol.GetAttributes().Where(v => v.AttributeClass == Program.TemplateAttribute).SingleOrDefault();
+        public AttributeData? TemplateAttribute => From.Member.Symbol.FindAttribute(Program.TemplateAttribute);
     }
     public abstract class _MemInst : MemberInstantiation 
     {
@@ -122,7 +122,11 @@ namespace CSharpParser_Tree.CS
 
         public class MemberLookup : KeyedDictionary<ISymbol, Member>
         {
-            public override ISymbol GetKeyForItem(Member val) => val.Symbol;
+            public override ISymbol GetKeyForItem(Member val) =>
+                val is Method { Declaration: OperatorDeclarationSyntax { ExpressionBody: {} bod } } m &&
+                m.Symbol.FindAttribute(InvocationTemplateAttribute) != null &&
+                bod.DescendantNodes().OfType<BinaryExpressionSyntax>().SingleOrDefault() is {} bes ?
+                    model.GetSymbolInfo(bes).Symbol! : val.Symbol!;
 
             public MemberLookup() : base(SymbolEqualityComparer.Default) { }
         }

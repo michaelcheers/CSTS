@@ -217,5 +217,7 @@ namespace CSharpParser_Tree
             /*foreach (var mem in root.Members)
                 PrintMember(mem);*/
         }
+        public static AttributeData? FindAttribute (this ISymbol symbol, INamedTypeSymbol attr) =>
+            symbol.GetAttributes().SingleOrDefault(v => v.AttributeClass == attr);
     }
 }

@@ -85,7 +85,8 @@ namespace CSharpParser_Tree
 
         public override void DefaultVisit(SyntaxNode node)
         {
-            if (node is TypeSyntax or ElementAccessExpressionSyntax or MemberAccessExpressionSyntax or BaseObjectCreationExpressionSyntax)
+            if (node is OperatorDeclarationSyntax && model.GetDeclaredSymbol(node)?.FindAttribute(Program.InvocationTemplateAttribute) != null) return;
+            if (node is TypeSyntax or ElementAccessExpressionSyntax or MemberAccessExpressionSyntax or BaseObjectCreationExpressionSyntax or BinaryExpressionSyntax)
             {
                 switch (model.GetSymbolInfo(node).Symbol)
                 {
@@ -108,7 +109,7 @@ namespace CSharpParser_Tree
                             ));
                         }
                         new SecondPass(genericArgs.ToImmutableDictionary()).Visit(m.Declaration);
-                        m.CreateInstance(upper).Instantiate(typeArgs.ToImmutableArray(), sym);
+                        m.CreateInstance(upper).Instantiate(typeArgs.ToImmutableArray(), sym.OriginalDefinition == m.Symbol.OriginalDefinition ? sym : m.Symbol);
                         break;
                 }
             }
