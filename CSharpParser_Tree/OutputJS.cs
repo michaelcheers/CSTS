@@ -159,18 +159,28 @@ namespace CSharpParser_Tree
                         Write(s, containing);
                     EndCodeBlock();
                     break;
-                case IfStatementSyntax ifss:
-                    Write("if (");
-                    Write(ifss.Condition, containing);
+                case IfStatementSyntax or WhileStatementSyntax:
+                    Write(statement switch { IfStatementSyntax => "if", WhileStatementSyntax => "while" });
+                    Write(" (");
+                    Write(statement switch
+                    {
+                        IfStatementSyntax ifss => ifss.Condition,
+                        WhileStatementSyntax wss => wss.Condition
+                    }, containing);
                     Write(")");
                     StartCodeBlock();
-                    if (ifss.Statement is BlockSyntax block)
+                    StatementSyntax body = statement switch
+                    {
+                        IfStatementSyntax ifss => ifss.Statement,
+                        WhileStatementSyntax wss => wss.Statement
+                    };
+                    if (body is BlockSyntax block)
                     {
                         foreach (var subStatement in block.Statements)
                             Write(subStatement, containing);
                     }
                     else
-                        Write(ifss.Statement, containing);
+                        Write(body, containing);
                     EndCodeBlock();
                     break;
                 case LocalDeclarationStatementSyntax ldss:

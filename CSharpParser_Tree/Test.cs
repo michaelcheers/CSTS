@@ -31,11 +31,23 @@ namespace System
     [Template("number"), External]
     public struct Int32
     {
-        [InvocationTemplate("{a} > {b}"), External]
+        [InvocationTemplate("{a} < {b}")]
+        public static bool operator < (int a, int b) => a < b;
+        [InvocationTemplate("{a} === {b}")]
+        public static bool operator ==(int a, int b) => a == b;
+        [InvocationTemplate("{a} !== {b}")]
+        public static bool operator !=(int a, int b) => a != b;
+        [InvocationTemplate("{a} > {b}")]
         public static bool operator > (int a, int b) => a > b;
+        [InvocationTemplate("{a} + {b}")]
+        public static int operator + (int a, int b) => a + b;
     }
     [Template("boolean"), External] public struct Boolean { }
-    [Template("string"), External] public struct String {  }
+    [Template("string"), External] public struct String
+    {
+        [Template("{this}.length")]
+        public extern int Length { get; }
+    }
     public class Attribute { }
 }
 
@@ -71,12 +83,11 @@ public class Program
 {
     public static void Main()
     {
-        List<string> theBest = new() { "Hey", "You" };
-        theBest.Add("Buffoon");
-        if (theBest.Count > 0)
+        int counter = 0;
+        while (counter < 10)
         {
-            Console.WriteLine(theBest.Last());
+            Console.WriteLine($"Hello World! The counter is {counter}");
+            counter = counter + 1;
         }
-        int cool;
     }
 }
