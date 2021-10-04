@@ -79,7 +79,11 @@ namespace CSharpParser_Tree
 
         public static IMethodSymbol GetAccessedProp(SyntaxNode node, IPropertySymbol ps) => node.Parent switch
         {
-            AssignmentExpressionSyntax aes when aes.Left == node => aes.Kind() == SyntaxKind.SimpleAssignmentExpression ? ps.SetMethod! : throw E,
+            AssignmentExpressionSyntax aes when aes.Left == node =>
+                aes.Kind() switch
+                {
+                    SyntaxKind.SimpleAssignmentExpression => ps.SetMethod!
+                },
             _ => ps.GetMethod!
         };
 
@@ -91,10 +95,11 @@ namespace CSharpParser_Tree
                 switch (model.GetSymbolInfo(node).Symbol)
                 {
                     case ITypeSymbol tsym:
+                        if (tsym.TypeKind == TypeKind.Delegate) break;
                         AddGenericArgs(tsym);
                         break;
                     case ISymbol sym when sym is IFieldSymbol or IMethodSymbol or IPropertySymbol:
-                        if (sym is IPropertySymbol ps) sym = ps.GetMethod!;
+                        if (sym is IPropertySymbol ps) sym = GetAccessedProp(node, ps);
                         ClassInstantiation upper = AddGenericArgs(sym.ContainingType);
                         Method m = (Method)memberLookup[sym.OriginalDefinition];
                         var genericArgs = upper.AllGenericArgs;

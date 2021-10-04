@@ -31,16 +31,26 @@ namespace System
     [Template("number"), External]
     public struct Int32
     {
-        [InvocationTemplate("{a} < {b}")]
-        public static bool operator < (int a, int b) => a < b;
         [InvocationTemplate("{a} === {b}")]
         public static bool operator ==(int a, int b) => a == b;
         [InvocationTemplate("{a} !== {b}")]
         public static bool operator !=(int a, int b) => a != b;
         [InvocationTemplate("{a} > {b}")]
         public static bool operator > (int a, int b) => a > b;
+        [InvocationTemplate("{a} >= {b}")]
+        public static bool operator >=(int a, int b) => a >= b;
+        [InvocationTemplate("{a} < {b}")]
+        public static bool operator <(int a, int b) => a < b;
+        [InvocationTemplate("{a} <= {b}")]
+        public static bool operator <=(int a, int b) => a <= b;
         [InvocationTemplate("{a} + {b}")]
         public static int operator + (int a, int b) => a + b;
+        [InvocationTemplate("{a} - {b}")]
+        public static int operator -(int a, int b) => a - b;
+        [InvocationTemplate("{a} * {b}")]
+        public static int operator *(int a, int b) => a * b;
+        [InvocationTemplate("{a} / {b}")]
+        public static int operator /(int a, int b) => a / b;
     }
     [Template("boolean"), External] public struct Boolean { }
     [Template("string"), External] public struct String
@@ -49,6 +59,7 @@ namespace System
         public extern int Length { get; }
     }
     public class Attribute { }
+    public delegate TResult Func<out TResult>();
 }
 
 [External]
@@ -79,15 +90,26 @@ class List<T>
     public extern T this[int index] { [InvocationTemplate("{this}[{index}]")] get; }
 }
 
+public class Vector2
+{
+    public int X { get; set; }
+}
+
 public class Program
 {
+    public static int BITSHIFT(int a, int b)
+    {
+        while (b-- >= 0) a *= 2;
+        return a;
+    }
     public static void Main()
     {
-        int counter = 0;
-        while (counter < 10)
+        int x = 0;
+        Console.WriteLine(x);
+        do
         {
-            Console.WriteLine($"Hello World! The counter is {counter}");
-            counter = counter + 1;
+            Console.WriteLine(BITSHIFT(1, x));
         }
+        while (x++ < 32);
     }
 }

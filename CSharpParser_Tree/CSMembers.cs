@@ -55,10 +55,14 @@ namespace CSharpParser_Tree.CS
 
         public virtual bool IsStatic => From.Member.Symbol is { IsStatic: true };
 
-        public virtual string MemName => Symbol.Name;
+        public virtual string MemName => From.Member.Name;
 
         public virtual string Template =>
-            TemplateAttribute != null ? ((string)TemplateAttribute.ConstructorArguments[0].Value!) : "{this}." + MemName;
+            TemplateAttribute != null ?
+                ((string)TemplateAttribute.ConstructorArguments[0].Value!) :
+                IsStatic ?
+                    $"{From.Upper!.ToString()}.{MemName}" :
+                    "{this}." + MemName;
 
         public virtual bool IsExternal => From.Member.Symbol.GetAttributes().Any(v => v.AttributeClass == ExternalAttribute);
 
@@ -334,12 +338,10 @@ namespace CSharpParser_Tree.CS
         public override ISymbol Symbol { get; }
         public override ImmutableArray<ClassInstantiation> GenericArgs { get; }
 
-        public string Name => From.Member.Name;
-
         public override string Template => Symbol switch
         {
             _ when TemplateAttribute != null => base.Template,
-            IMethodSymbol { IsExtensionMethod: true } => "{this}" + $"[{Name}]",
+            IMethodSymbol { IsExtensionMethod: true } => "{this}" + $"[{MemName}]",
             IMethodSymbol { MethodKind: MethodKind.Constructor } => $"new {From.Upper}",
             _ => base.Template
         };

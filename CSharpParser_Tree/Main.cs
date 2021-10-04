@@ -20,7 +20,7 @@ namespace CSharpParser_Tree
 
     public static partial class Program
     {
-        public static SyntaxTree tree;
+        public static CSharpSyntaxTree tree;
         public static CompilationUnitSyntax root;
         public static CSharpCompilation compilation;
         public static SemanticModel model;
@@ -33,7 +33,8 @@ namespace CSharpParser_Tree
 
         static Program()
         {
-            tree = CSharpSyntaxTree.ParseText(File.ReadAllText("Test.cs"));
+            tree = (CSharpSyntaxTree)CSharpSyntaxTree.ParseText(File.ReadAllText("Test.cs"));
+            tree = ZeroethPass(tree);
             root = tree.GetCompilationUnitRoot();
             compilation = CSharpCompilation.Create("HelloWorld").AddSyntaxTrees(tree);
             model = compilation.GetSemanticModel(tree);
@@ -43,6 +44,7 @@ namespace CSharpParser_Tree
             top = Class.CreateRoot(new Class(model.Compilation.GlobalNamespace, null!, "", null!));
             ArrayType = new Class(null!, null!/*Will be fixed!*/, "Array", top.From.Member).CreateInstance(top);
         }
+
         #region Old Code
         public static string PrintExpr(StatementSyntax expr)
         {
@@ -179,6 +181,8 @@ namespace CSharpParser_Tree
             }
         }
         #endregion
+
+        public static partial CSharpSyntaxTree ZeroethPass(CSharpSyntaxTree tree);
         public static partial void FirstPass();
         public static partial void SecondPass();
         public static partial void OutputJS();

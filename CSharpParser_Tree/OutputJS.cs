@@ -14,6 +14,7 @@ namespace CSharpParser_Tree
     using static Program;
     using static Basics.ExceptionThrower;
     using System.Text.RegularExpressions;
+    using Microsoft.CodeAnalysis.CSharp;
 
     public static partial class Program
     {
@@ -40,17 +41,32 @@ namespace CSharpParser_Tree
         public void Write (MemberInstantiation inst)
         {
             if (inst.IsExternal) return;
-            WriteLine();
             switch (inst)
             {
                 case MethodInstantiation method:
-                    if (method.Symbol is IFieldSymbol fs)
+                    void WriteTrivia ()
                     {
-                        Write(fs.Name);
+                        WriteLine(); 
+                        if (method.Symbol.IsStatic) Write("static ");
+                    }
+                    if (method.Symbol switch
+                    {
+                        IFieldSymbol => true,
+                        IMethodSymbol ms when ms.MethodKind is MethodKind.PropertyGet => true,
+                        _ => false
+                    })
+                    {
+                        var (name, type) = method.Symbol switch
+                        {
+                            IFieldSymbol fs => (fs.Name, fs.Type),
+                            IMethodSymbol { AssociatedSymbol: IPropertySymbol ps } => (ps.Name, ps.Type)
+                        };
+                        WriteTrivia();
+                        Write(name);
                         Write(": ");
-                        Write(fs.Type);
+                        Write(type);
                         Write(" = ");
-                        WriteDefaultValueOf(fs.Type);
+                        WriteDefaultValueOf(type);
                         Write(";");
                         break;
                     }
@@ -58,11 +74,11 @@ namespace CSharpParser_Tree
                     {
                         AccessorDeclarationSyntax acc => (acc.Body, acc.ExpressionBody),
                         PropertyDeclarationSyntax pds => (null, pds.ExpressionBody),
-                        BaseMethodDeclarationSyntax mds => (mds.Body, mds.ExpressionBody)
+                        BaseMethodDeclarationSyntax mds => (mds.Body, mds.ExpressionBody),
+                        null => (null, null)
                     };
                     if (body == null && exprBody == null) return;
-                    if (method.Symbol.IsStatic)
-                        Write("static ");
+                    WriteTrivia();
                     if (method.Symbol.Kind == SymbolKind.Property &&
                         method.From.Member.Declaration is AccessorDeclarationSyntax { Body: null, ExpressionBody: null } ads)
                     {
@@ -106,6 +122,7 @@ namespace CSharpParser_Tree
                     }
                     break;
                 case ClassInstantiation ci:
+                    WriteLine();
                     Write("class ");
                     Write(ci.From.Member.Name);
                     StartCodeBlock();
@@ -160,6 +177,7 @@ namespace CSharpParser_Tree
                     EndCodeBlock();
                     break;
                 case IfStatementSyntax or WhileStatementSyntax:
+                {
                     Write(statement switch { IfStatementSyntax => "if", WhileStatementSyntax => "while" });
                     Write(" (");
                     Write(statement switch
@@ -183,6 +201,24 @@ namespace CSharpParser_Tree
                         Write(body, containing);
                     EndCodeBlock();
                     break;
+                }
+                case DoStatementSyntax doss:
+                {
+                    Write("do");
+                    StartCodeBlock();
+                    if (doss.Statement is BlockSyntax block)
+                    {
+                        foreach (var subStatement in block.Statements)
+                            Write(subStatement, containing);
+                    }
+                    else
+                        Write(doss.Statement, containing);
+                    EndCodeBlock();
+                    Write("while (");
+                    Write(doss.Condition, containing);
+                    Write(");");
+                    break;
+                }
                 case LocalDeclarationStatementSyntax ldss:
                     ITypeSymbol ts = (ITypeSymbol)model.GetSymbolInfo(ldss.Declaration.Type).Symbol!;
                     WriteJoin(ldss.Declaration.Variables, varia =>
@@ -201,6 +237,15 @@ namespace CSharpParser_Tree
                     break;
                 case ExpressionStatementSyntax ess:
                     Write(ess.Expression, containing);
+                    Write(";");
+                    break;
+                case ReturnStatementSyntax rss:
+                    Write("return");
+                    if (rss.Expression is {} e)
+                    {
+                        Write(" ");
+                        Write(e, containing);
+                    }
                     Write(";");
                     break;
                 default:
@@ -244,7 +289,7 @@ namespace CSharpParser_Tree
                         if (!first) Write(",");
                         first = false;
                         WriteLine();
-                        Write(child.Name);
+                        Write(child.MemName);
                         Write(": ");
                         if (child.From.Member.IsField) WriteDefaultValueOf(child.ReturnType);
                     }
@@ -267,21 +312,25 @@ namespace CSharpParser_Tree
             EndCodeBlock();
         }
 
-        public static MemberInstantiation FindSymbol (ISymbol sym) =>
+        public static MemberInstantiation FindSymbol (ISymbol sym) => sym switch
+        {
+            IPropertySymbol ps => FindSymbol(ps),
+            _ => FindSymbolNonProperty(sym)
+        };
+
+        static MemberInstantiation FindSymbolNonProperty (ISymbol sym) =>
             sym.OriginalDefinition != sym ?
-                allSymbols[sym.ContainingType!].Children.Single(mi => mi.Symbol.Equals(sym switch
-                    { IPropertySymbol ps => ps.GetMethod, _ => sym }
-                )) :
+                allSymbols[sym.ContainingType!].Children.Single(mi => mi.Symbol.Equals(sym)) :
                 ((MethodInstance)memberLookup[sym].CreateInstance(allSymbols[sym.ContainingType!])).InstantiateNonGeneric();
 
         public static MethodInstantiation FindSymbol(IFieldSymbol sym)
-            => (MethodInstantiation)FindSymbol((ISymbol)sym);
+            => (MethodInstantiation)FindSymbolNonProperty(sym);
 
         public static MethodInstantiation FindSymbol(IMethodSymbol sym)
-            => (MethodInstantiation)FindSymbol((ISymbol)sym);
+            => (MethodInstantiation)FindSymbolNonProperty(sym);
 
         public static MethodInstantiation FindSymbol(IPropertySymbol sym)
-            => (MethodInstantiation)FindSymbol((ISymbol)sym);
+            => (MethodInstantiation)FindSymbolNonProperty(sym.GetMethod!);
 
         public void Write (ExpressionSyntax expr, MethodInstantiation containing)
         {
@@ -345,70 +394,41 @@ namespace CSharpParser_Tree
                         ElementAccessExpressionSyntax => ((IPropertySymbol)model.GetSymbolInfo(expr).Symbol!).GetMethod!,
                         BinaryExpressionSyntax bes => (IMethodSymbol)model.GetSymbolInfo(bes).Symbol!,
                     };
-                    var foundMem = FindSymbol(ms);
-                    ms = (IMethodSymbol)foundMem.Symbol;
-                    ExpressionSyntax? left = expr switch
+                    if (expr is InvocationExpressionSyntax ies && ms == null)
                     {
-                        _ when ms.IsStatic => null,
-                        InvocationExpressionSyntax { Expression: MemberAccessExpressionSyntax maes } => maes.Expression,
-                        ElementAccessExpressionSyntax eaes => eaes.Expression
-                    };
-                    ExpressionSyntax[] arguments = expr switch
-                    {
-                        InvocationExpressionSyntax inv => inv.ArgumentList.Arguments.Select(a => a.Expression).ToArray(),
-                        ElementAccessExpressionSyntax eaes => eaes.ArgumentList.Arguments.Select(a => a.Expression).ToArray(),
-                        BinaryExpressionSyntax bes => new[] { bes.Left, bes.Right }
-                    };
-                    //if (model.GetSymbolInfo(left).Symbol! is not IMethodSymbol ms)
-                    //{
-                    //    Write(left, containing);
-                    //    Write("(");
-                    //    WriteJoin(ies.ArgumentList.Arguments, arg => Write(arg.Expression, containing));
-                    //    Write(")");
-                    //    break;
-                    //}
-                    string template = foundMem.InvocationTemplate;
-                    (string key, int count)[] formatStrings = Regex.Matches(template, "{[0-9a-zA-Z]+}").GroupBy(m => m.Value).Select(g => (g.Key, g.Count())).ToArray();
-                    List<string> formatParams = new();
-                    foreach ((string key, _) in formatStrings.Where(f => f.count > 1))
-                    {
-                        template = template.Replace(key, "$" + formatParams.Count);
-                        formatParams.Add(key);
+                        ExpressionSyntax e = ies.Expression;
+                        if (e is ParenthesizedExpressionSyntax { Expression: CastExpressionSyntax } pes)
+                            e = pes.Expression;
+                        Write(e, containing);
+                        Write("(");
+                        WriteJoin(ies.ArgumentList.Arguments, arg => Write(arg.Expression, containing));
+                        Write(")");
+                        break;
                     }
-                    if (formatParams.Count > 0)
-                    {
-                        string formatVars = formatParams.Select((_, i) => "$" + i).JoinC();
-                        if (formatParams.Count > 1)
-                            formatVars = "(" + formatVars + ")";
-                        template = $"({formatVars} => {template})({formatParams.JoinC()})";
-                    }
-                    List<(string, Action)> replacements = new();
-                    if (!ms.IsStatic)
-                        if (left != null)
-                            replacements.Add(("{this}", () => Write(left, containing)));
-                        else throw E;
-                    foreach (var (parameter, i) in ms.Parameters.Select((v, i) => (v, i)))
-                    {
-                        replacements.Add(("{" + parameter.Name + "}", () => Write(arguments[i], containing)));
-                        replacements.Add(("{" + i + "}", () => Write(arguments[i], containing)));
-                    }
-                    replacements.Add(("{...}", () => WriteJoin(arguments, arg => Write(arg, containing))));
-                    WriteReplacing(template, replacements);
+                    WriteInvocation(
+                        FindSymbol(ms),
+                        expr switch
+                        {
+                            _ when ms.IsStatic => null,
+                            InvocationExpressionSyntax { Expression: MemberAccessExpressionSyntax maes } => maes.Expression,
+                            ElementAccessExpressionSyntax eaes => eaes.Expression
+                        },
+                        expr switch
+                        {
+                            InvocationExpressionSyntax inv => inv.ArgumentList.Arguments.Select(a => a.Expression).ToArray(),
+                            ElementAccessExpressionSyntax eaes => eaes.ArgumentList.Arguments.Select(a => a.Expression).ToArray(),
+                            BinaryExpressionSyntax bes => new[] { bes.Left, bes.Right }
+                        },
+                        containing
+                    );
                     break;
                 case BaseObjectCreationExpressionSyntax boces:
-                    var constructorSym = (IMethodSymbol)model.GetSymbolInfo(boces).Symbol!;
-                    var constructorMem = (MethodInstantiation)allSymbols[constructorSym.ContainingType!].Children.Single(mi => mi.Symbol.Equals(constructorSym));
-                    WriteReplacing(constructorMem.InvocationTemplate,
-                        "{...$arr}", () =>
-                        {
-                            if (boces.Initializer is {} init)
-                                WriteJoin(init.Expressions.Where(e => e is not AssignmentExpressionSyntax), e => Write(e, containing));
-                        },
-                        "{...}", () =>
-                        {
-                            if (boces.ArgumentList is { } al)
-                                WriteJoin(al.Arguments, arg => Write(arg.Expression, containing));
-                        }
+                    WriteInvocation(
+                        FindSymbol((IMethodSymbol)model.GetSymbolInfo(boces).Symbol!),
+                        left: null,
+                        boces.ArgumentList,
+                        containing,
+                        boces.Initializer
                     );
                     break;
                 case NameSyntax ns when ns is QualifiedNameSyntax or IdentifierNameSyntax:
@@ -428,26 +448,95 @@ namespace CSharpParser_Tree
                             throw E;
                     });
                     break;
-                case AssignmentExpressionSyntax aes:
+                case AssignmentExpressionSyntax aes when aes.Kind() == SyntaxKind.SimpleAssignmentExpression:
                     Write(aes.Left, containing);
                     Write(" = ");
                     Write(aes.Right, containing);
+                    break;
+                case ParenthesizedExpressionSyntax pes:
+                    Write("(");
+                    Write(pes.Expression, containing);
+                    Write(")");
+                    break;
+                case CastExpressionSyntax ces when model.GetTypeInfo(ces.Type) is { Type.TypeKind: TypeKind.Delegate }:
+                    Write(ces.Expression, containing);
+                    break;
+                case LambdaExpressionSyntax les:
+                    switch (les)
+                    {
+                        case SimpleLambdaExpressionSyntax sles:
+                            Write(sles.Parameter.Identifier.ValueText);
+                            break;
+                        case ParenthesizedLambdaExpressionSyntax ples:
+                            Write("(");
+                            WriteJoin(ples.ParameterList.Parameters, p => Write(p.Identifier.ValueText));
+                            Write(")");
+                            break;
+                        default: throw E;
+                    }
+                    Write(" => ");
+                    switch (les)
+                    {
+                        case { ExpressionBody: {} eb }:
+                            Write(eb, containing);
+                            break;
+                        case { Body: BlockSyntax bod }:
+                            Write("{");
+                            indent++;
+                            foreach (var statement in bod.Statements)
+                                Write(statement, containing);
+                            indent--;
+                            WriteLine();
+                            Write("}");
+                            break;
+                        default: throw E;
+                    }
                     break;
                 default:
                     throw E;
             }
         }
+        public void WriteInvocation (MethodInstantiation mem, ExpressionSyntax? left, ArgumentListSyntax? argumentList, MethodInstantiation containing, InitializerExpressionSyntax? initializer = null) =>
+            WriteInvocation(
+                mem: mem,
+                left: left,
+                arguments: argumentList is {} al ? al.Arguments.Select(a => a.Expression).ToArray() : Array.Empty<ExpressionSyntax>(),
+                containing: containing,
+                initializer: initializer
+            );
 
-        public void WriteInvocation (MethodInstantiation mi, ArgumentListSyntax? argumentList, MethodInstantiation containing, Action? thisK = null, InitializerExpressionSyntax? initializer = null)
+        public void WriteInvocation (MethodInstantiation mem, ExpressionSyntax? left, ExpressionSyntax[] arguments, MethodInstantiation containing, InitializerExpressionSyntax? initializer = null)
         {
-            List<(string, Action)> replacements = new()
+            IMethodSymbol ms = (IMethodSymbol)mem.Symbol;
+            string template = mem.InvocationTemplate;
+            (string key, int count)[] formatStrings = Regex.Matches(template, "{[0-9a-zA-Z]+}").GroupBy(m => m.Value).Select(g => (g.Key, g.Count())).ToArray();
+            List<string> formatParams = new();
+            foreach ((string key, _) in formatStrings.Where(f => f.count > 1))
             {
-                ("{...}", (Action)(() => { if (argumentList is { } al) WriteJoin(al.Arguments, a => Write(a.Expression, containing)); } ))
-            };
-            if (initializer is {} i && i.Expressions.Any(e => e is not AssignmentExpressionSyntax))
-                replacements.Add(("{...$arr}", () => WriteJoin(i.Expressions.Where(e => e is not AssignmentExpressionSyntax), e => Write(e, containing))));
-            if (thisK != null) replacements.Add(("{this}", thisK));
-            WriteReplacing(mi.Template, replacements);
+                template = template.Replace(key, "$" + formatParams.Count);
+                formatParams.Add(key);
+            }
+            if (formatParams.Count > 0)
+            {
+                string formatVars = formatParams.Select((_, i) => "$" + i).JoinC();
+                if (formatParams.Count > 1)
+                    formatVars = "(" + formatVars + ")";
+                template = $"({formatVars} => {template})({formatParams.JoinC()})";
+            }
+            List<(string, Action)> replacements = new();
+            replacements.Add(("{...}", (Action)(() => { WriteJoin(arguments, a => Write(a, containing)); })));
+            if (ms is { IsStatic: false, MethodKind: not MethodKind.Constructor })
+                if (left != null)
+                    replacements.Add(("{this}", () => Write(left, containing)));
+                else throw E;
+            foreach (var (parameter, i) in ms.Parameters.Select((v, i) => (v, i)))
+            {
+                replacements.Add(("{" + parameter.Name + "}", () => Write(arguments[i], containing)));
+                replacements.Add(("{" + i + "}", () => Write(arguments[i], containing)));
+            }
+            if (initializer != null && initializer.Expressions.Any(e => e is not AssignmentExpressionSyntax))
+                replacements.Add(("{...$arr}", () => WriteJoin(initializer.Expressions.Where(e => e is not AssignmentExpressionSyntax), e => Write(e, containing))));
+            WriteReplacing(template, replacements);
         }
 
         public void Write(ITypeSymbol ts) => Write(allSymbols[ts]);

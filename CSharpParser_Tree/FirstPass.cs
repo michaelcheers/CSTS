@@ -64,14 +64,14 @@ namespace CSharpParser_Tree
                         CSharpSyntaxNode decl = pds.AccessorList is { } accessorList ?
                             accessorList.Accessors.Single(v => v.IsKind(SyntaxKind.GetAccessorDeclaration))
                             : pds;
-                        upper.members.Add(new Method(gm, decl, "get " + ps.Name, upper));
-                        if (decl is AccessorDeclarationSyntax { Body: null, ExpressionBody: null })
-                            break;
+                        upper.members.Add(new Method(gm, decl, /*"get " + */ps.Name, upper));
+                        //if (decl is AccessorDeclarationSyntax { Body: null, ExpressionBody: null })
+                        //    break;
                     }
                     if (ps.SetMethod is { } sm)
                     {
                         var decl = pds.AccessorList!.Accessors.Single(v => v.IsKind(SyntaxKind.SetAccessorDeclaration));
-                        upper.members.Add(new Method(sm, decl, "set " + ps.Name, upper));
+                        upper.members.Add(new Method(sm, decl, /*"set " + */ps.Name, upper));
                     }
                     break;
                 case FieldDeclarationSyntax fds:
@@ -81,6 +81,7 @@ namespace CSharpParser_Tree
                         upper.members.Add(new Method(fs, variable, fs.Name, upper));
                     }
                     break;
+                case DelegateDeclarationSyntax:
                 case GlobalStatementSyntax:
                     break;
                 default:
