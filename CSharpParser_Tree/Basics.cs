@@ -1,5 +1,7 @@
 ﻿#nullable enable
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
@@ -76,6 +78,25 @@ namespace Basics
         public static ImmutableArray<T2> ImmutSelect<T, T2>(this IEnumerable<T> e, Func<T, T2> f) => e.Select(f).ToImmutableArray();
         [DebuggerStepThrough]
         public static ImmutableArray<T2> ImmutSelect<T, T2>(this ImmutableArray<T> e, Func<T, T2> f) => ImmutableArray.CreateRange(e, f);
+    }
+    public static class SyntaxMaker
+    {
+        //public static string GenerateName() => "_" + Guid.NewGuid().ToString("N").ToUpper();
+        private static int name = 0;
+        public static string GenerateName() => "_" + name++;
+        public static LocalDeclarationStatementSyntax GenerateVarDeclaration(string varName, ExpressionSyntax expression) =>
+            SyntaxFactory.LocalDeclarationStatement(
+                SyntaxFactory.VariableDeclaration(
+                    SyntaxFactory.IdentifierName("var"),
+                    SyntaxFactory.SeparatedList(new[]{
+                        SyntaxFactory.VariableDeclarator(
+                            identifier: SyntaxFactory.Identifier(varName)
+                        ).WithInitializer(
+                            SyntaxFactory.EqualsValueClause(expression)
+                        )
+                    })
+                )
+            );
     }
     class ListComparer<T> : IEqualityComparer<ImmutableArray<T>> where T : notnull
     {

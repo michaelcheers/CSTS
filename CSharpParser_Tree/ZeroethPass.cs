@@ -10,6 +10,7 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace CSharpParser_Tree
 {
+    using static Basics.SyntaxMaker;
     using static Basics.ExceptionThrower;
 
     public class ZeroethPass : CSharpSyntaxRewriter
@@ -19,7 +20,6 @@ namespace CSharpParser_Tree
         {
             this.model = model;
         }
-        public static string GenerateVarName () => "_" + Guid.NewGuid().ToString("N").ToUpper();
         public static InvocationExpressionSyntax GenerateBlockLambdaInvocation(ITypeSymbol type, params StatementSyntax[] statements) =>
             GenerateBlockLambdaInvocation(type, (IEnumerable<StatementSyntax>)statements);
         public static InvocationExpressionSyntax GenerateBlockLambdaInvocation(ITypeSymbol type, IEnumerable<StatementSyntax> statements) =>
@@ -67,20 +67,9 @@ namespace CSharpParser_Tree
                 case IdentifierNameSyntax op:
                     return GenerateAssignment(op);
                 case MemberAccessExpressionSyntax maes:
-                    string leftVarName = GenerateVarName();
+                    string leftVarName = GenerateName();
                     return GenerateBlockLambdaInvocation(model.GetTypeInfo(node.Left).Type!,
-                        SyntaxFactory.LocalDeclarationStatement(
-                            SyntaxFactory.VariableDeclaration(
-                                SyntaxFactory.IdentifierName("var"),
-                                SyntaxFactory.SeparatedList(new[]{
-                                    SyntaxFactory.VariableDeclarator(
-                                        identifier: SyntaxFactory.Identifier(leftVarName)
-                                    ).WithInitializer(
-                                        SyntaxFactory.EqualsValueClause(maes.Expression)
-                                    )
-                                })
-                            )
-                        ),
+                        GenerateVarDeclaration(leftVarName, maes.Expression),
                         SyntaxFactory.ReturnStatement(
                             GenerateAssignment(
                                 maes.WithExpression(
@@ -114,20 +103,9 @@ namespace CSharpParser_Tree
                 case IdentifierNameSyntax op:
                     return GenerateAssignment(op);
                 case MemberAccessExpressionSyntax maes:
-                    string leftVarName = GenerateVarName();
+                    string leftVarName = GenerateName();
                     return GenerateBlockLambdaInvocation(model.GetTypeInfo(node.Operand).Type!,
-                        SyntaxFactory.LocalDeclarationStatement(
-                            SyntaxFactory.VariableDeclaration(
-                                SyntaxFactory.IdentifierName("var"),
-                                SyntaxFactory.SeparatedList(new[]{
-                                        SyntaxFactory.VariableDeclarator(
-                                            identifier: SyntaxFactory.Identifier(leftVarName)
-                                        ).WithInitializer(
-                                            SyntaxFactory.EqualsValueClause(maes.Expression)
-                                        )
-                                })
-                            )
-                        ),
+                        GenerateVarDeclaration(leftVarName, maes.Expression),
                         SyntaxFactory.ReturnStatement(
                             GenerateAssignment(
                                 maes.WithExpression(
@@ -151,37 +129,15 @@ namespace CSharpParser_Tree
                         operand = op;
                         break;
                     case MemberAccessExpressionSyntax maes:
-                        string leftVarName = GenerateVarName();
+                        string leftVarName = GenerateName();
                         operand = maes.WithExpression(SyntaxFactory.IdentifierName(leftVarName));
-                        yield return SyntaxFactory.LocalDeclarationStatement(
-                            SyntaxFactory.VariableDeclaration(
-                                SyntaxFactory.IdentifierName("var"),
-                                SyntaxFactory.SeparatedList(new[]{
-                                            SyntaxFactory.VariableDeclarator(
-                                                identifier: SyntaxFactory.Identifier(leftVarName)
-                                            ).WithInitializer(
-                                                SyntaxFactory.EqualsValueClause(maes.Expression)
-                                            )
-                                })
-                            )
-                        );
+                        yield return GenerateVarDeclaration(leftVarName, maes.Expression);
                         break;
                     default:
                         throw E;
                 }
-                string varName = GenerateVarName();
-                yield return SyntaxFactory.LocalDeclarationStatement(
-                    SyntaxFactory.VariableDeclaration(
-                        SyntaxFactory.IdentifierName("var"),
-                        SyntaxFactory.SeparatedList(new[] {
-                                SyntaxFactory.VariableDeclarator(
-                                    identifier: SyntaxFactory.Identifier(varName)
-                                ).WithInitializer(
-                                    SyntaxFactory.EqualsValueClause(operand)
-                                )
-                        })
-                    )
-                );
+                string varName = GenerateName();
+                yield return GenerateVarDeclaration(varName, operand);
                 yield return SyntaxFactory.ExpressionStatement(
                     SyntaxFactory.AssignmentExpression(
                         SyntaxKind.SimpleAssignmentExpression,

@@ -125,6 +125,8 @@ namespace CSharpParser_Tree
                     WriteLine();
                     Write("class ");
                     Write(ci.From.Member.Name);
+                    if (ci.Symbol is INamedTypeSymbol {BaseType: INamedTypeSymbol {
+                        SpecialType: not SpecialType.System_Object } bt }) { Write(" extends "); Write(bt); }
                     StartCodeBlock();
                     WriteChildren(ci);
                     EndCodeBlock();
@@ -165,9 +167,233 @@ namespace CSharpParser_Tree
                 Out.Write(new string(' ', indent * 4));
         }
 
+        public abstract record ConditionPart;
+        public abstract record BasicConditionPart : ConditionPart;
+
+        public record ExpressionPart (Action expression) : BasicConditionPart;
+        public record StatementPart  (Action statement ) : BasicConditionPart;
+
+        public record VariableDeclarationPart (string varName, Action expression) : ConditionPart;
+
+        public List<BasicConditionPart> SplitCondition (ExpressionSyntax es, MethodInstantiation containing) =>
+            SimplifyConditions(SplitConditionPart1(es, containing)).ToList();
+
+        public ExpressionPart MergeConditions(List<ExpressionPart> conditions) => conditions switch
+        {
+            { Count: 1 } => conditions[0],
+            { Count: > 1 } => new (() => WriteJoin(conditions, c => c.expression(), " && "))
+        };
+
+        public IEnumerable<BasicConditionPart> SimplifyConditions(IEnumerable<ConditionPart> conditions)
+        {
+            List<ExpressionPart>? expressionParts = null;
+            List<VariableDeclarationPart>? varDecls = null;
+            var enumer = conditions.GetEnumerator();
+            bool moved;
+            do
+            {
+                moved = enumer.MoveNext();
+                ConditionPart? condition = null;
+                if (moved)
+                {
+                    condition = enumer.Current;
+                    switch (condition)
+                    {
+                        case StatementPart sp:
+                            yield return sp;
+                            break;
+                        case ExpressionPart e:
+                            (expressionParts ??= new()).Add(e);
+                            break;
+                        case VariableDeclarationPart decl:
+                            (varDecls ??= new()).Add(decl);
+                            break;
+                        default:
+                            throw E;
+                    }
+                }
+                else
+                    enumer.Dispose();
+                if (expressionParts != null && condition is not ExpressionPart)
+                {
+                    yield return MergeConditions(expressionParts);
+                    expressionParts = null;
+                }
+                if (varDecls != null && condition is not VariableDeclarationPart)
+                {
+                    Action MergeDecls(IEnumerable<VariableDeclarationPart> vdps) => () =>
+                    {
+                        Write("let ");
+                        WriteJoin(vdps, vdp => { Write(vdp.varName); Write(" = "); vdp.expression(); });
+                        Write(";");
+                    };
+                    yield return new StatementPart(MergeDecls(varDecls));
+                    varDecls = null;
+                }
+            }
+            while (moved);
+        }
+
+        public IEnumerable<ConditionPart> SplitConditionPart1 (ExpressionSyntax es, MethodInstantiation containing) => es switch
+        {
+            BinaryExpressionSyntax bes when bes.Kind() == SyntaxKind.LogicalAndExpression
+                => new[] { bes.Left, bes.Right }.SelectMany(e => SplitConditionPart1(e, containing)),
+            ParenthesizedExpressionSyntax pes => SplitConditionPart1(pes.Expression, containing),
+            IsPatternExpressionSyntax ipes when ipes.DescendantNodes().Any(n => n is SingleVariableDesignationSyntax)
+                => SplitPattern(ipes, containing),
+            _ => new [] { new ExpressionPart(() => Write(es, containing)) }
+        };
+
+        public IEnumerable<ConditionPart> SplitPattern(IsPatternExpressionSyntax ipes, MethodInstantiation containing) =>
+            SplitPattern(() => Write(ipes.Expression, containing), ipes.Pattern, containing);
+
+        public void WriteJSDeclaration(string varName, Action expr)
+        {
+            Write("let ");
+            Write(varName);
+            Write(" = ");
+            expr();
+            Write(";");
+        }
+        public IEnumerable<ConditionPart> SplitPattern(string varName, PatternSyntax ps, MethodInstantiation containing)
+            => SplitPattern(() => Write(varName), ps, containing, isVar: true);
+
+        public IEnumerable<ConditionPart> SplitPattern (Action expr, PatternSyntax ps, MethodInstantiation containing, bool isVar = false)
+        {
+            switch (ps)
+            {
+                case RecursivePatternSyntax or DeclarationPatternSyntax:
+                    var pat = new
+                    {
+                        Type = ps switch { RecursivePatternSyntax rps => rps.Type, DeclarationPatternSyntax dps => dps.Type },
+                        PropertyPatternClause = ps switch { RecursivePatternSyntax rps => rps.PropertyPatternClause, DeclarationPatternSyntax => null },
+                        Designation = ps switch { RecursivePatternSyntax rps => rps.Designation, DeclarationPatternSyntax dps => dps.Designation }
+                    };
+                    if (!isVar && !(
+                        // simplification possible if:
+                        pat.PropertyPatternClause == null &&
+                        !(pat.Type is not { IsVar: false } && pat.Designation is {})
+                    ))
+                    {
+                        string varName = SyntaxMaker.GenerateName();
+                        yield return new VariableDeclarationPart(varName, expr);
+                        expr = () => Write(varName);
+                    }
+                    if (pat.Type is {} t && !t.IsVar)
+                        yield return new ExpressionPart(() =>
+                            WriteTypeCheck(expr, (ITypeSymbol)model.GetSymbolInfo(t).Symbol!)
+                        );
+                    if (pat.PropertyPatternClause is {} ppc)
+                    {
+                        if (pat.Type is not { IsVar: false })
+                            yield return new ExpressionPart(() => { expr(); Write(" != "); Write("null"); });
+                        foreach (SubpatternSyntax subpattern in ppc.Subpatterns)
+                        {
+                            MemberInstantiation found = FindSymbol(model.GetSymbolInfo(subpattern.NameColon!.Name).Symbol!);
+                            foreach (var c in 
+                                /* yield* return */ SplitPattern(
+                                    () => WriteReplacing(found.Template, "{this}", expr), subpattern.Pattern, containing
+                                )/*;*/
+                            ) yield return c;
+                        }
+                    }
+                    switch (pat.Designation)
+                    {
+                        case null:
+                            break;
+                        case SingleVariableDesignationSyntax svds:
+                            yield return new VariableDeclarationPart(svds.Identifier.ValueText, expr);
+                            break;
+                        default:
+                            throw E;
+                    }
+                    break;
+                case ConstantPatternSyntax cps:
+                    yield return new ExpressionPart(() => { expr(); Write(" === "); Write(cps.Expression, containing); });
+                    break;
+                case RelationalPatternSyntax rps:
+                    yield return new ExpressionPart(() =>
+                    {
+                        expr();
+                        Write(" ");
+                        Write(rps.OperatorToken.Kind() switch
+                        {
+                            SyntaxKind.GreaterThanToken => ">",
+                            SyntaxKind.GreaterThanEqualsToken => ">=",
+                            SyntaxKind.LessThanToken => "<",
+                            SyntaxKind.LessThanOrEqualExpression => "<="
+                        });
+                        Write(" ");
+                        Write(rps.Expression, containing);
+                    });
+                    break;
+                default:
+                    throw E;
+            }
+        }
+
+        public void WriteTypeCheck (Action expr, ITypeSymbol ts)
+        {
+            switch (ts.TypeKind)
+            {
+                case TypeKind.Struct when allSymbols[ts] is var ci && primitiveTypes.TryGetValue(ci, out var primitiveT):
+                    switch (primitiveT)
+                    {
+                        case SpecialType.System_Int32:
+                            Write("typeof ");
+                            expr();
+                            Write(" === 'number'");
+                            break;
+                        case SpecialType.System_String:
+                            Write("typeof ");
+                            expr();
+                            Write(" === 'string'");
+                            break;
+                        default: throw E;
+                    }
+                    break;
+                default:
+                    expr();
+                    Write(" instanceof ");
+                    Write(ts);
+                    break;
+            }
+        }
+
         public void Write (StatementSyntax statement, MethodInstantiation containing)
         {
             WriteLine();
+            void WriteBasicLoop ()
+            {
+                Write(statement switch { IfStatementSyntax => "if", WhileStatementSyntax => "while" });
+                Write(" (");
+                ExpressionSyntax condition = statement switch
+                {
+                    IfStatementSyntax ifss => ifss.Condition,
+                    WhileStatementSyntax wss => wss.Condition
+                };
+                List<BasicConditionPart> conditions = SplitCondition(condition, containing).ToList();
+                if (conditions[0] is ExpressionPart { expression: var expr })
+                {
+                    expr();
+                    conditions.RemoveAt(0);
+                }
+                Write(")");
+                StartCodeBlock();
+                StatementSyntax body = statement switch
+                {
+                    IfStatementSyntax ifss => ifss.Statement,
+                    WhileStatementSyntax wss => wss.Statement
+                };
+                if (body is BlockSyntax block)
+                {
+                    foreach (var subStatement in block.Statements)
+                        Write(subStatement, containing);
+                }
+                else
+                    Write(body, containing);
+                EndCodeBlock();
+            }
             switch (statement)
             {
                 case BlockSyntax bs:
@@ -176,17 +402,46 @@ namespace CSharpParser_Tree
                         Write(s, containing);
                     EndCodeBlock();
                     break;
-                case IfStatementSyntax or WhileStatementSyntax:
+                case WhileStatementSyntax:
+                    WriteBasicLoop();
+                    break;
+                case IfStatementSyntax:
                 {
-                    Write(statement switch { IfStatementSyntax => "if", WhileStatementSyntax => "while" });
-                    Write(" (");
-                    Write(statement switch
+                    ExpressionSyntax condition = statement switch
                     {
                         IfStatementSyntax ifss => ifss.Condition,
                         WhileStatementSyntax wss => wss.Condition
-                    }, containing);
-                    Write(")");
+                    };
+                    List<BasicConditionPart> conditions = SplitCondition(condition, containing);
+                    if (conditions.Count == 1 && conditions[0] is ConditionPart)
+                    {
+                        WriteBasicLoop();
+                        break;
+                    }
+                    string labelName = SyntaxMaker.GenerateName();
+                    Write(labelName);
+                    Write(":");
                     StartCodeBlock();
+                    foreach (var c in conditions)
+                    {
+                        switch (c)
+                        {
+                            case ExpressionPart { expression: Action cond }:
+                                WriteLine();
+                                Write("if (!(");
+                                cond();
+                                Write(")) break ");
+                                Write(labelName);
+                                Write(";");
+                                break;
+                            case StatementPart { statement: Action statm }:
+                                WriteLine();
+                                statm();
+                                break;
+                            default:
+                                throw E;
+                        }
+                    }
                     StatementSyntax body = statement switch
                     {
                         IfStatementSyntax ifss => ifss.Statement,
@@ -278,6 +533,9 @@ namespace CSharpParser_Tree
                             return;
                         case SpecialType.System_Char:
                             Write(@"'\0'");
+                            return;
+                        case SpecialType.System_String:
+                            Write("null");
                             return;
                         default: throw E;
                     }
@@ -505,7 +763,16 @@ namespace CSharpParser_Tree
                 initializer: initializer
             );
 
-        public void WriteInvocation (MethodInstantiation mem, ExpressionSyntax? left, ExpressionSyntax[] arguments, MethodInstantiation containing, InitializerExpressionSyntax? initializer = null)
+        public void WriteInvocation (MethodInstantiation mem, ExpressionSyntax? left, ExpressionSyntax[] arguments, MethodInstantiation containing, InitializerExpressionSyntax? initializer = null) =>
+            WriteInvocation(
+                mem: mem,
+                left: left is {} l ? () => Write(l, containing) : null,
+                arguments: arguments,
+                containing: containing,
+                initializer: initializer
+            );
+
+        public void WriteInvocation (MethodInstantiation mem, Action? left, ExpressionSyntax[] arguments, MethodInstantiation containing, InitializerExpressionSyntax? initializer = null)
         {
             IMethodSymbol ms = (IMethodSymbol)mem.Symbol;
             string template = mem.InvocationTemplate;
@@ -527,15 +794,64 @@ namespace CSharpParser_Tree
             replacements.Add(("{...}", (Action)(() => { WriteJoin(arguments, a => Write(a, containing)); })));
             if (ms is { IsStatic: false, MethodKind: not MethodKind.Constructor })
                 if (left != null)
-                    replacements.Add(("{this}", () => Write(left, containing)));
+                    replacements.Add(("{this}", () => left()));
                 else throw E;
             foreach (var (parameter, i) in ms.Parameters.Select((v, i) => (v, i)))
             {
                 replacements.Add(("{" + parameter.Name + "}", () => Write(arguments[i], containing)));
                 replacements.Add(("{" + i + "}", () => Write(arguments[i], containing)));
             }
-            if (initializer != null && initializer.Expressions.Any(e => e is not AssignmentExpressionSyntax))
-                replacements.Add(("{...$arr}", () => WriteJoin(initializer.Expressions.Where(e => e is not AssignmentExpressionSyntax), e => Write(e, containing))));
+            replacements.Add(("{...$arr}", () =>
+            {
+                if (initializer != null && initializer.Expressions.Any(e => e is not AssignmentExpressionSyntax))
+                    WriteJoin(
+                        initializer.Expressions.Where(e => e is not AssignmentExpressionSyntax),
+                        e => Write(e, containing)
+                    );
+            }));
+            if (initializer != null)
+            {
+                string varName = SyntaxMaker.GenerateName();
+                List<Action> init = new();
+                foreach (var expr in initializer.Expressions)
+                {
+                    if (expr is AssignmentExpressionSyntax aes)
+                    {
+                        var m = FindSymbol(model.GetSymbolInfo(aes.Left).Symbol!);
+                        init.Add(() =>
+                        {
+                            WriteReplacing(m.Template, "{this}", () => Write(varName));
+                            Write(" = ");
+                            Write(aes.Right, containing);
+                            Write(";");
+                        });
+                    }
+                    else if (!template.Contains("{...$arr}"))
+                    {
+                        init.Add(() => WriteInvocation(
+                            mem: FindSymbol((IMethodSymbol)model.GetCollectionInitializerSymbolInfo(expr).Symbol!),
+                            left: () => Write(varName),
+                            arguments: new[] { expr },
+                            containing: containing
+                        ));
+                    }
+                }
+                if (init.Count > 0)
+                {
+                    Write("(() =>");
+                    StartCodeBlock();
+                    WriteLine();
+                    WriteJSDeclaration(varName, () => WriteReplacing(template, replacements));
+                    foreach (var i in init) { WriteLine(); i(); }
+                    WriteLine();
+                    Write("return ");
+                    Write(varName);
+                    Write(";");
+                    EndCodeBlock();
+                    Write(")()");
+                    return;
+                }
+            }
             WriteReplacing(template, replacements);
         }
 

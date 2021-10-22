@@ -89,27 +89,15 @@ class List<T>
 
     public extern T this[int index] { [InvocationTemplate("{this}[{index}]")] get; }
 }
-
-public class Vector2
-{
-    public int X { get; set; }
-}
+public class B : A { public List<int> l; public string name; }
+public class A { }
 
 public class Program
 {
-    public static int BITSHIFT(int a, int b)
-    {
-        while (b-- >= 0) a *= 2;
-        return a;
-    }
     public static void Main()
     {
-        int x = 0;
-        Console.WriteLine(x);
-        do
-        {
-            Console.WriteLine(BITSHIFT(1, x));
-        }
-        while (x++ < 32);
+        A a = new B { l = new() { 3 }, name = "Hello Kitty" };
+        if (a is B {l: {Count: >0 } l } b)
+            Console.WriteLine($"It's a b called {b.name} with {l.Count} elements!");
     }
 }
