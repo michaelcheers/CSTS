@@ -58,8 +58,39 @@ namespace System
         [Template("{this}.length")]
         public extern int Length { get; }
     }
+    [Template("number"), External]
+    public struct Double
+    {
+        [InvocationTemplate("{a} === {b}")]
+        public static bool operator ==(double a, double b) => a == b;
+        [InvocationTemplate("{a} !== {b}")]
+        public static bool operator !=(double a, double b) => a != b;
+        [InvocationTemplate("{a} > {b}")]
+        public static bool operator >(double a, double b) => a > b;
+        [InvocationTemplate("{a} >= {b}")]
+        public static bool operator >=(double a, double b) => a >= b;
+        [InvocationTemplate("{a} < {b}")]
+        public static bool operator <(double a, double b) => a < b;
+        [InvocationTemplate("{a} <= {b}")]
+        public static bool operator <=(double a, double b) => a <= b;
+        [InvocationTemplate("{a} + {b}")]
+        public static double operator +(double a, double b) => a + b;
+        [InvocationTemplate("{a} - {b}")]
+        public static double operator -(double a, double b) => a - b;
+        [InvocationTemplate("{a} * {b}")]
+        public static double operator *(double a, double b) => a * b;
+        [InvocationTemplate("{a} / {b}")]
+        public static double operator /(double a, double b) => a / b;
+    }
     public class Attribute { }
     public delegate TResult Func<out TResult>();
+}
+
+[External]
+public static class Math
+{
+    [Template("Math.sqrt")]
+    public static extern double Sqrt (double number);
 }
 
 [External]
@@ -68,6 +99,8 @@ public static class Console
     [Template("console.log")]
     //[Template("(v => [new Text(v), document.createElement('br')].forEach(e => document.body.appendChild(e)))")]
     public static extern void WriteLine(int value);
+    [Template("console.log")]
+    public static extern void WriteLine(double value);
     [Template("console.log")]
     public static extern void WriteLine(string value);
 }
@@ -92,12 +125,24 @@ class List<T>
 public class B : A { public List<int> l; public string name; }
 public class A { }
 
+public class Vector2
+{
+    public double X, Y;
+    public Vector2 (double x, double y) { X = x; Y = y; }
+    public double Length
+    {
+        get => Math.Sqrt(X * X + Y * Y);
+        set => Y = Math.Sqrt(value * value - X * X);
+    }
+}
+
 public class Program
 {
     public static void Main()
     {
-        A a = new B { l = new() { 3 }, name = "Hello Kitty" };
-        if (a is B {l: {Count: >0 } l } b)
-            Console.WriteLine($"It's a b called {b.name} with {l.Count} elements!");
+        Vector2 vec = new(12, 5);
+        Console.WriteLine(vec.Length);
+        vec.Length = 37;
+        Console.WriteLine(vec.Length);
     }
 }

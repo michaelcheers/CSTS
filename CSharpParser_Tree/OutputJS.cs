@@ -52,7 +52,9 @@ namespace CSharpParser_Tree
                     if (method.Symbol switch
                     {
                         IFieldSymbol => true,
-                        IMethodSymbol ms when ms.MethodKind is MethodKind.PropertyGet => true,
+                        IMethodSymbol { MethodKind: MethodKind.PropertyGet } when
+                            method.From.Member.Declaration is AccessorDeclarationSyntax { Body: null, ExpressionBody: null }
+                          => true,
                         _ => false
                     })
                     {
@@ -79,6 +81,7 @@ namespace CSharpParser_Tree
                     };
                     if (body == null && exprBody == null) return;
                     WriteTrivia();
+                    bool isSetter = false;
                     if (method.Symbol.Kind == SymbolKind.Property &&
                         method.From.Member.Declaration is AccessorDeclarationSyntax { Body: null, ExpressionBody: null } ads)
                     {
@@ -90,7 +93,18 @@ namespace CSharpParser_Tree
                         if (method.From.Member.Declaration is ConstructorDeclarationSyntax)
                             Write("constructor");
                         else
+                        {
+                            if (method.From.Member.Declaration is var decl
+                                && decl is AccessorDeclarationSyntax or PropertyDeclarationSyntax
+                            )
+                                Write(decl.Kind() switch
+                                {
+                                    SyntaxKind.PropertyDeclaration => "get ",
+                                    SyntaxKind.GetAccessorDeclaration => "get ",
+                                    SyntaxKind.SetAccessorDeclaration => (isSetter = true) ? "set " : throw E
+                                });
                             Write(method.From.Member.Name);
+                        }
                         switch (method.From.Member.Symbol)
                         {
                             case IMethodSymbol ms:
@@ -105,7 +119,7 @@ namespace CSharpParser_Tree
                                 break;
                         }
                     }
-                    if (method.From.Member.Declaration is not ConstructorDeclarationSyntax)
+                    if (method.From.Member.Declaration is not ConstructorDeclarationSyntax && !isSetter)
                     {
                         Write(": ");
                         Write(method.ReturnType);
@@ -119,14 +133,26 @@ namespace CSharpParser_Tree
                     }
                     else if (exprBody != null)
                     {
+                        indent++;
+                        Write(" { ");
+                        if (method.ReturnType.Symbol is not ITypeSymbol { SpecialType: SpecialType.System_Void })
+                            Write("return ");
+                        Write(exprBody.Expression, method);
+                        Write(" }");
+                        indent--;
                     }
                     break;
                 case ClassInstantiation ci:
                     WriteLine();
                     Write("class ");
                     Write(ci.From.Member.Name);
-                    if (ci.Symbol is INamedTypeSymbol {BaseType: INamedTypeSymbol {
-                        SpecialType: not SpecialType.System_Object } bt }) { Write(" extends "); Write(bt); }
+                    if (ci.Symbol is INamedTypeSymbol { BaseType:
+                        INamedTypeSymbol { SpecialType: not SpecialType.System_Object and not SpecialType.System_ValueType } bt 
+                    })
+                    {
+                        Write(" extends ");
+                        Write(bt);
+                    }
                     StartCodeBlock();
                     WriteChildren(ci);
                     EndCodeBlock();
@@ -529,6 +555,7 @@ namespace CSharpParser_Tree
                     {
                         case SpecialType.System_Int16:
                         case SpecialType.System_Int32:
+                        case SpecialType.System_Double:
                             Write("0");
                             return;
                         case SpecialType.System_Char:
