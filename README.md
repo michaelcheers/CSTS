@@ -30,10 +30,10 @@ This would require use of c++ style templates for transpiling to Typescript inst
 ## Pattern Matching
 ![](https://i.imgur.com/THl6mfh.png)
 
-## Basic Getters/Setters
+## Getters/Setters
 ![](https://i.imgur.com/VQ9jv9h.png)
 
-## Basic Assignment Operators
+## Assignment Operators
 ![](https://i.imgur.com/wd9xvR4.png)
 
 (purposefully avoiding the use of JavaScript's built-in increment/decrement operators to show its ability to work with custom operators)
