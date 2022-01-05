@@ -32,3 +32,6 @@ This would require use of c++ style templates for transpiling to Typescript inst
 
 ## Basic Getters/Setters
 ![](https://i.imgur.com/VQ9jv9h.png)
+
+## Basic Assignment Operators
+![](https://i.imgur.com/wd9xvR4.png)
