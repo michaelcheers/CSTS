@@ -35,3 +35,5 @@ This would require use of c++ style templates for transpiling to Typescript inst
 
 ## Basic Assignment Operators
 ![](https://i.imgur.com/wd9xvR4.png)
+
+(purposefully avoiding the use of JavaScript's built-in increment/decrement operators to show its ability to work with custom operators)
