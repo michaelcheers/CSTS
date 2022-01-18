@@ -25,7 +25,7 @@ The idea would be that any reference to `List<bool>` or `BoolList` would use `Bo
 
 This would require use of c++ style templates for transpiling to Typescript instead of the c# style of generics. Any types using a `List<T>` where `T` could be a `bool` would need to have separate implementations one with `BoolList` and one using the regular `List<T>`.
 
-# Examples
+# Example Conversions
 
 ## Pattern Matching
 ![](https://i.imgur.com/THl6mfh.png)
